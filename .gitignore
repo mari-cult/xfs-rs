@@ -1,0 +1,4 @@
+target/
+*.c
+*.h
+*.xfs

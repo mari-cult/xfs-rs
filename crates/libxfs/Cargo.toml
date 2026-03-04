@@ -1,0 +1,15 @@
+[package]
+name = "xfs-rs-libxfs"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "libxfs_rs"
+path = "src/lib.rs"
+
+[features]
+default = []
+std = []
+
+[dependencies]
+thiserror.workspace = true
