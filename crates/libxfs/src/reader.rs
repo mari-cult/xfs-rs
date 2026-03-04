@@ -2,8 +2,8 @@ use crate::crc::verify_xfs_crc;
 use crate::device::BlockDevice;
 use crate::error::{DeviceError, ParseError, ReadError};
 use crate::on_disk::agf::{Agf, XFS_AGF_CRC_OFF, XFS_AGF_SIZE};
-use crate::on_disk::agi::{Agi, XFS_AGI_CRC_OFF, XFS_AGI_SIZE};
 use crate::on_disk::agfl::{Agfl, XFS_AGFL_CRC_OFF};
+use crate::on_disk::agi::{Agi, XFS_AGI_CRC_OFF, XFS_AGI_SIZE};
 use crate::on_disk::inobt::{InodeBtreeKind, InodeBtreeRoot, XFS_BTREE_SBLOCK_CRC_OFF};
 use crate::on_disk::superblock::{Superblock, XFS_DSB_SIZE, XFS_SB_CRC_OFF};
 
@@ -42,7 +42,9 @@ pub fn read_superblock<D: BlockDevice>(dev: &mut D) -> Result<Superblock, ReadEr
         let mut sector = [0u8; XFS_MAX_SECTOR_SIZE];
         dev.read_at(0, &mut sector[..sector_size])?;
         if !verify_xfs_crc(&sector[..sector_size], XFS_SB_CRC_OFF) {
-            return Err(ReadError::Parse(ParseError::CrcMismatch { what: "superblock" }));
+            return Err(ReadError::Parse(ParseError::CrcMismatch {
+                what: "superblock",
+            }));
         }
     }
 
@@ -85,7 +87,11 @@ pub fn read_agi<D: BlockDevice>(dev: &mut D, sb: &Superblock, agno: u32) -> Resu
     Ok(agi)
 }
 
-pub fn read_agfl<D: BlockDevice>(dev: &mut D, sb: &Superblock, agno: u32) -> Result<Agfl, ReadError> {
+pub fn read_agfl<D: BlockDevice>(
+    dev: &mut D,
+    sb: &Superblock,
+    agno: u32,
+) -> Result<Agfl, ReadError> {
     let sector_size = ensure_sector_size(sb.sector_size)?;
     let offset = ag_start(sb, agno)? + 3 * sb.sector_size as u64;
     let mut sector = [0u8; XFS_MAX_SECTOR_SIZE];
@@ -95,7 +101,11 @@ pub fn read_agfl<D: BlockDevice>(dev: &mut D, sb: &Superblock, agno: u32) -> Res
         return Err(ReadError::Parse(ParseError::CrcMismatch { what: "agfl" }));
     }
 
-    Ok(Agfl::parse(&sector[..sector_size], sb.sector_size, sb.is_v5())?)
+    Ok(Agfl::parse(
+        &sector[..sector_size],
+        sb.sector_size,
+        sb.is_v5(),
+    )?)
 }
 
 pub fn read_inobt_root<D: BlockDevice>(
@@ -115,7 +125,9 @@ pub fn read_inobt_root<D: BlockDevice>(
     let offset = ag_start(sb, agno)? + (agi.root as u64) * (sb.block_size as u64);
     dev.read_at(offset, &mut scratch[..blksz])?;
     if sb.is_v5() && !verify_xfs_crc(&scratch[..blksz], XFS_BTREE_SBLOCK_CRC_OFF) {
-        return Err(ReadError::Parse(ParseError::CrcMismatch { what: "inobt root" }));
+        return Err(ReadError::Parse(ParseError::CrcMismatch {
+            what: "inobt root",
+        }));
     }
     Ok(InodeBtreeRoot::parse(
         &scratch[..blksz],

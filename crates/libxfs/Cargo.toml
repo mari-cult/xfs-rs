@@ -1,10 +1,11 @@
 [package]
-name = "xfs-rs-libxfs"
+name = "xfs-rs"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 
 [lib]
-name = "libxfs_rs"
+name = "xfs"
 path = "src/lib.rs"
 
 [features]

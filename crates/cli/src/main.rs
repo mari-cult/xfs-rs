@@ -17,12 +17,18 @@ fn run() -> Result<(), libxfs_rs::ReadError> {
     let agfl = libxfs_rs::read_agfl(&mut dev, &sb, 0)?;
     let mut scratch = vec![0u8; sb.block_size as usize];
     let inobt = libxfs_rs::read_inobt_root(&mut dev, &sb, &agi, 0, &mut scratch)?;
-    let finobt = if sb.has_ro_compat_feature(libxfs_rs::on_disk::superblock::XFS_SB_FEAT_RO_COMPAT_FINOBT)
-    {
-        Some(libxfs_rs::read_finobt_root(&mut dev, &sb, &agi, 0, &mut scratch)?)
-    } else {
-        None
-    };
+    let finobt =
+        if sb.has_ro_compat_feature(libxfs_rs::on_disk::superblock::XFS_SB_FEAT_RO_COMPAT_FINOBT) {
+            Some(libxfs_rs::read_finobt_root(
+                &mut dev,
+                &sb,
+                &agi,
+                0,
+                &mut scratch,
+            )?)
+        } else {
+            None
+        };
 
     let incompat = sb.v5.map(|v| v.features_incompat).unwrap_or(0);
     let ro_compat = sb.v5.map(|v| v.features_ro_compat).unwrap_or(0);

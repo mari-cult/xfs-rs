@@ -30,7 +30,11 @@ pub struct InodeBtreeRoot {
 }
 
 impl InodeBtreeRoot {
-    pub fn parse(bytes: &[u8], kind: InodeBtreeKind, crc_enabled: bool) -> Result<Self, ParseError> {
+    pub fn parse(
+        bytes: &[u8],
+        kind: InodeBtreeKind,
+        crc_enabled: bool,
+    ) -> Result<Self, ParseError> {
         if !crc_enabled {
             return Err(ParseError::UnsupportedVersion(4));
         }

@@ -1,7 +1,0 @@
-[package]
-name = "xfs-rs-std-tool"
-version.workspace = true
-edition.workspace = true
-
-[dependencies]
-libxfs_rs = { package = "xfs-rs-libxfs", path = "../libxfs", features = ["std"] }
