@@ -11,3 +11,4 @@ pub mod geometry;
 pub mod on_disk;
 pub mod reader;
 pub mod writer;
+pub use crate::writer::{MkfsOptions, mkfs};

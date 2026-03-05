@@ -1,4 +1,4 @@
-use crate::endian::{be_u16, be_u32, be_u64, require_len};
+use crate::endian::{be_u16, be_u32, be_u64};
 use crate::error::ParseError;
 
 pub const XFS_IBT_MAGIC: u32 = 0x4941_4254;
@@ -45,7 +45,15 @@ impl InodeBtreeRoot {
         if !crc_enabled {
             return Err(ParseError::UnsupportedVersion(4));
         }
-        require_len(bytes, XFS_BTREE_SBLOCK_CRC_LEN)?;
+        {
+            if bytes.len() < XFS_BTREE_SBLOCK_CRC_LEN {
+                return Err(ParseError::BufferTooSmall {
+                    expected: XFS_BTREE_SBLOCK_CRC_LEN,
+                    actual: bytes.len(),
+                });
+            }
+            Ok(())
+        }?;
 
         let magic = be_u32(bytes, 0);
         let expected = match kind {
@@ -75,6 +83,29 @@ impl InodeBtreeRoot {
             owner: be_u32(bytes, 48),
             crc: u32::from_le_bytes([bytes[52], bytes[53], bytes[54], bytes[55]]),
         })
+    }
+
+    /// Serialize the btree root to a byte slice.
+    ///
+    /// # Errors
+    ///
+    /// * [`ParseError::BufferTooSmall`] - If the byte slice is not long enough.
+    pub fn serialize(&self, bytes: &mut [u8]) -> Result<(), ParseError> {
+        use crate::endian::{put_be16, put_be32, put_be64, require_len};
+        require_len(bytes, XFS_BTREE_SBLOCK_CRC_LEN)?;
+
+        put_be32(bytes, 0, self.magic);
+        put_be16(bytes, 4, self.level);
+        put_be16(bytes, 6, self.numrecs);
+        put_be32(bytes, 8, self.leftsib);
+        put_be32(bytes, 12, self.rightsib);
+        put_be64(bytes, 16, self.blkno);
+        put_be64(bytes, 24, self.lsn);
+        bytes[32..48].copy_from_slice(&self.uuid);
+        put_be32(bytes, 48, self.owner);
+        // CRC at 52 is written later
+
+        Ok(())
     }
 }
 

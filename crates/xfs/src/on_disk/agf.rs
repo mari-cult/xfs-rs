@@ -1,4 +1,4 @@
-use crate::endian::{be_u32, be_u64, require_len};
+use crate::endian::{be_u32, be_u64};
 use crate::error::ParseError;
 
 pub const XFS_AGF_MAGIC: u32 = 0x5841_4746;
@@ -36,7 +36,15 @@ impl Agf {
     ///
     /// * [`ParseError`]
     pub fn parse(bytes: &[u8]) -> Result<Self, ParseError> {
-        require_len(bytes, XFS_AGF_SIZE)?;
+        {
+            if bytes.len() < XFS_AGF_SIZE {
+                return Err(ParseError::BufferTooSmall {
+                    expected: XFS_AGF_SIZE,
+                    actual: bytes.len(),
+                });
+            }
+            Ok(())
+        }?;
 
         let magic = be_u32(bytes, 0);
         if magic != XFS_AGF_MAGIC {
@@ -77,6 +85,43 @@ impl Agf {
             lsn: be_u64(bytes, 208),
             crc: be_u32(bytes, 216),
         })
+    }
+
+    /// Serialize the AGF to a byte slice.
+    ///
+    /// # Errors
+    ///
+    /// * [`ParseError::BufferTooSmall`] - If the byte slice is not long enough.
+    pub fn serialize(&self, bytes: &mut [u8]) -> Result<(), ParseError> {
+        use crate::endian::{put_be32, put_be64, require_len};
+        require_len(bytes, XFS_AGF_SIZE)?;
+
+        put_be32(bytes, 0, XFS_AGF_MAGIC);
+        put_be32(bytes, 4, XFS_AGF_VERSION);
+        put_be32(bytes, 8, self.seqno);
+        put_be32(bytes, 12, self.length);
+        put_be32(bytes, 16, self.bno_root);
+        put_be32(bytes, 20, self.cnt_root);
+        put_be32(bytes, 24, self.rmap_root);
+        put_be32(bytes, 28, self.bno_level);
+        put_be32(bytes, 32, self.cnt_level);
+        put_be32(bytes, 36, self.rmap_level);
+        put_be32(bytes, 40, self.flfirst);
+        put_be32(bytes, 44, self.fllast);
+        put_be32(bytes, 48, self.flcount);
+        put_be32(bytes, 52, self.freeblks);
+        put_be32(bytes, 56, self.longest);
+        put_be32(bytes, 60, self.btreeblks);
+        bytes[64..80].copy_from_slice(&self.uuid);
+        put_be32(bytes, 80, self.rmap_blocks);
+        put_be32(bytes, 84, self.refcount_blocks);
+        put_be32(bytes, 88, self.refcount_root);
+        put_be32(bytes, 92, self.refcount_level);
+        // padding
+        bytes[96..208].fill(0);
+        put_be64(bytes, 208, self.lsn);
+        // CRC is written later
+        Ok(())
     }
 }
 

@@ -1,4 +1,4 @@
-use crate::endian::{be_u32, be_u64, require_len};
+use crate::endian::{be_u32, be_u64};
 use crate::error::ParseError;
 
 pub const XFS_AGI_MAGIC: u32 = 0x5841_4749;
@@ -35,7 +35,15 @@ impl Agi {
     /// * `ParseError::InvalidMagic` - If the magic number is not valid.
     /// * `ParseError::InvalidLength` - If the byte slice is not the correct length.
     pub fn parse(bytes: &[u8]) -> Result<Self, ParseError> {
-        require_len(bytes, XFS_AGI_SIZE)?;
+        {
+            if bytes.len() < XFS_AGI_SIZE {
+                return Err(ParseError::BufferTooSmall {
+                    expected: XFS_AGI_SIZE,
+                    actual: bytes.len(),
+                });
+            }
+            Ok(())
+        }?;
 
         let magic = be_u32(bytes, 0);
         if magic != XFS_AGI_MAGIC {
@@ -80,6 +88,43 @@ impl Agi {
             iblocks: be_u32(bytes, 336),
             fblocks: be_u32(bytes, 340),
         })
+    }
+
+    /// Serialize the AGI to a byte slice.
+    ///
+    /// # Errors
+    ///
+    /// * [`ParseError::BufferTooSmall`] - If the byte slice is not long enough.
+    pub fn serialize(&self, bytes: &mut [u8]) -> Result<(), ParseError> {
+        use crate::endian::{put_be32, put_be64, require_len};
+        require_len(bytes, XFS_AGI_SIZE)?;
+
+        put_be32(bytes, 0, XFS_AGI_MAGIC);
+        put_be32(bytes, 4, XFS_AGI_VERSION);
+        put_be32(bytes, 8, self.seqno);
+        put_be32(bytes, 12, self.length);
+        put_be32(bytes, 16, self.count);
+        put_be32(bytes, 20, self.root);
+        put_be32(bytes, 24, self.level);
+        put_be32(bytes, 28, self.freecount);
+        put_be32(bytes, 32, self.newino);
+        put_be32(bytes, 36, self.dirino);
+
+        let mut off = 40;
+        for &val in &self.unlinked {
+            put_be32(bytes, off, val);
+            off += 4;
+        }
+
+        bytes[296..312].copy_from_slice(&self.uuid);
+        // CRC at 312
+        put_be64(bytes, 320, self.lsn);
+        put_be32(bytes, 328, self.free_root);
+        put_be32(bytes, 332, self.free_level);
+        put_be32(bytes, 336, self.iblocks);
+        put_be32(bytes, 340, self.fblocks);
+
+        Ok(())
     }
 }
 

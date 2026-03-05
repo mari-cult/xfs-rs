@@ -30,6 +30,18 @@ pub fn verify_xfs_crc(bytes: &[u8], cksum_offset: usize) -> bool {
     expected == actual
 }
 
+pub fn write_xfs_crc(bytes: &mut [u8], cksum_offset: usize) {
+    use crate::endian::put_le32;
+    if bytes.len() < cksum_offset + 4 {
+        return;
+    }
+    put_le32(bytes, cksum_offset, 0);
+    let mut crc = crc32c(XFS_CRC_SEED, &bytes[..cksum_offset]);
+    crc = crc32c(crc, &[0u8; 4]);
+    crc = crc32c(crc, &bytes[cksum_offset + 4..]);
+    put_le32(bytes, cksum_offset, !crc);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

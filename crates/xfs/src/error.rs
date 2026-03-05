@@ -36,6 +36,16 @@ pub enum ReadError {
     Parse(ParseError),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum WriteError {
+    #[error("{0}")]
+    Device(DeviceError),
+    #[error("{0}")]
+    Parse(ParseError),
+    #[error("{0}")]
+    TryFromInt(core::num::TryFromIntError),
+}
+
 impl From<DeviceError> for ReadError {
     fn from(value: DeviceError) -> Self {
         Self::Device(value)
@@ -43,6 +53,18 @@ impl From<DeviceError> for ReadError {
 }
 
 impl From<ParseError> for ReadError {
+    fn from(value: ParseError) -> Self {
+        Self::Parse(value)
+    }
+}
+
+impl From<DeviceError> for WriteError {
+    fn from(value: DeviceError) -> Self {
+        Self::Device(value)
+    }
+}
+
+impl From<ParseError> for WriteError {
     fn from(value: ParseError) -> Self {
         Self::Parse(value)
     }

@@ -1,4 +1,4 @@
-use crate::endian::{be_u32, be_u64, require_len};
+use crate::endian::{be_u32, be_u64};
 use crate::error::ParseError;
 
 pub const XFS_AGFL_MAGIC: u32 = 0x5841_464c;
@@ -24,8 +24,24 @@ impl Agfl {
     /// * `ParseError::InvalidLength` - If the byte slice is not the correct length.
     pub fn parse(bytes: &[u8], sector_size: u16, crc_enabled: bool) -> Result<Self, ParseError> {
         let sector_size = sector_size as usize;
-        require_len(bytes, sector_size)?;
-        require_len(bytes, XFS_AGFL_HEADER_SIZE)?;
+        {
+            if bytes.len() < sector_size {
+                return Err(ParseError::BufferTooSmall {
+                    expected: sector_size,
+                    actual: bytes.len(),
+                });
+            }
+            Ok(())
+        }?;
+        {
+            if bytes.len() < XFS_AGFL_HEADER_SIZE {
+                return Err(ParseError::BufferTooSmall {
+                    expected: XFS_AGFL_HEADER_SIZE,
+                    actual: bytes.len(),
+                });
+            }
+            Ok(())
+        }?;
 
         let magic = be_u32(bytes, 0);
         if magic != XFS_AGFL_MAGIC {
@@ -53,6 +69,28 @@ impl Agfl {
             crc: be_u32(bytes, 32),
             entries_total,
         })
+    }
+
+    /// Serialize the AGFL to a byte slice.
+    ///
+    /// # Errors
+    ///
+    /// * [`ParseError::BufferTooSmall`] - If the byte slice is not long enough.
+    pub fn serialize(&self, bytes: &mut [u8], crc_enabled: bool) -> Result<(), ParseError> {
+        if crc_enabled {
+            use crate::endian::{put_be32, put_be64, require_len};
+            require_len(bytes, XFS_AGFL_HEADER_SIZE)?;
+
+            put_be32(bytes, 0, XFS_AGFL_MAGIC);
+            put_be32(bytes, 4, self.seqno);
+            bytes[8..24].copy_from_slice(&self.uuid);
+            put_be64(bytes, 24, self.lsn);
+            // CRC at 32 is written later
+        } else {
+            // For V4, there is no header, just entries.
+            // We don't need to do anything here as mkfs starts with empty AGFL.
+        }
+        Ok(())
     }
 }
 

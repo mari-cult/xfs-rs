@@ -28,7 +28,14 @@ fn main() -> Result<(), Report> {
         Subcommand::Mkfs { file, size } => {
             let mut dev = xfs::device::StdFileDevice::create(&file)
                 .attach(format!("Failed to create file: {}", file.display()))?;
-            // xfs::mkfs(&mut dev, size).attach(format!("Failed to mkfs: {}", file.display()))?;
+            let opts = xfs::MkfsOptions {
+                block_size: 4096,
+                sector_size: 512,
+                ag_blocks: 262_144, // 1GB AGs by default
+                total_blocks: size / 4096,
+                uuid: *uuid::Uuid::new_v4().as_bytes(),
+            };
+            xfs::mkfs(&mut dev, &opts).attach(format!("Failed to mkfs: {}", file.display()))?;
         }
         Subcommand::Info { file } => {
             let mut dev = xfs::device::StdFileDevice::open(&file)

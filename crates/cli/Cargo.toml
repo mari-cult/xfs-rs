@@ -12,6 +12,7 @@ path = "src/main.rs"
 xfs-rs = { workspace = true, features = ["std"] }
 clap = { workspace = true }
 rootcause = { workspace = true }
+uuid = { workspace = true }
 
 [lints]
 workspace = true

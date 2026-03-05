@@ -23,9 +23,19 @@ pub fn be_u16(bytes: &[u8], off: usize) -> u16 {
 }
 
 #[inline]
+pub fn put_be16(bytes: &mut [u8], off: usize, val: u16) {
+    bytes[off..off + 2].copy_from_slice(&val.to_be_bytes());
+}
+
+#[inline]
 #[must_use]
 pub fn be_u32(bytes: &[u8], off: usize) -> u32 {
     u32::from_be_bytes([bytes[off], bytes[off + 1], bytes[off + 2], bytes[off + 3]])
+}
+
+#[inline]
+pub fn put_be32(bytes: &mut [u8], off: usize, val: u32) {
+    bytes[off..off + 4].copy_from_slice(&val.to_be_bytes());
 }
 
 #[inline]
@@ -44,7 +54,17 @@ pub fn be_u64(bytes: &[u8], off: usize) -> u64 {
 }
 
 #[inline]
+pub fn put_be64(bytes: &mut [u8], off: usize, val: u64) {
+    bytes[off..off + 8].copy_from_slice(&val.to_be_bytes());
+}
+
+#[inline]
 #[must_use]
 pub fn le_u32(bytes: &[u8], off: usize) -> u32 {
     u32::from_le_bytes([bytes[off], bytes[off + 1], bytes[off + 2], bytes[off + 3]])
+}
+
+#[inline]
+pub fn put_le32(bytes: &mut [u8], off: usize, val: u32) {
+    bytes[off..off + 4].copy_from_slice(&val.to_le_bytes());
 }

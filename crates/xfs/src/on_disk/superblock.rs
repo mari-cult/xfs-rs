@@ -217,6 +217,83 @@ impl Superblock {
         self.v5
             .is_some_and(|v| (v.features_ro_compat & feature) != 0)
     }
+
+    /// Serialize the superblock to a byte slice.
+    ///
+    /// # Errors
+    ///
+    /// * [`ParseError::BufferTooSmall`] - If the byte slice is not long enough.
+    pub fn serialize(&self, bytes: &mut [u8]) -> Result<(), ParseError> {
+        use crate::endian::{put_be16, put_be32, put_be64};
+        require_len(bytes, XFS_DSB_SIZE)?;
+
+        put_be32(bytes, 0, XFS_SB_MAGIC);
+        put_be32(bytes, 4, self.block_size);
+        put_be64(bytes, 8, self.dblocks);
+        put_be64(bytes, 16, self.rblocks);
+        put_be64(bytes, 24, self.rextents);
+        bytes[32..48].copy_from_slice(&self.uuid);
+        put_be64(bytes, 48, self.logstart);
+        put_be64(bytes, 56, self.rootino);
+        put_be64(bytes, 64, self.rbmino);
+        put_be64(bytes, 72, self.rsumino);
+        put_be32(bytes, 80, self.rextsize);
+        put_be32(bytes, 84, self.ag_blocks);
+        put_be32(bytes, 88, self.ag_count);
+        put_be32(bytes, 92, self.rbm_blocks);
+        put_be32(bytes, 96, self.log_blocks);
+        put_be16(bytes, 100, self.version);
+        put_be16(bytes, 102, self.sector_size);
+        put_be16(bytes, 104, self.inode_size);
+        put_be16(bytes, 106, self.inode_per_block);
+        bytes[108..120].copy_from_slice(&self.fname);
+        bytes[120] = self.block_log;
+        bytes[121] = self.sect_log;
+        bytes[122] = self.inode_log;
+        bytes[123] = 0; // sb_inodelog
+        bytes[124] = 0; // sb_maxinoarch
+        bytes[125] = 0; // sb_rextslog
+        bytes[126] = u8::from(self.inprogress);
+        bytes[127] = 0; // sb_pad
+        put_be64(bytes, 128, self.icount);
+        put_be64(bytes, 136, self.ifree);
+        put_be64(bytes, 144, self.fdblocks);
+        put_be64(bytes, 152, self.frextents);
+        put_be64(bytes, 160, self.uquotino);
+        put_be64(bytes, 168, self.gquotino);
+        put_be16(bytes, 176, self.qflags);
+        bytes[178] = self.flags;
+        bytes[179] = self.shared_vn;
+        put_be32(bytes, 180, self.inoalignmt);
+        put_be32(bytes, 184, self.unit);
+        put_be32(bytes, 188, self.width);
+        bytes[192] = 0; // dirblklog
+        bytes[193] = 0; // logsectlog
+        put_be16(bytes, 194, self.log_sector_size);
+        put_be32(bytes, 196, self.log_sunit);
+        put_be32(bytes, 200, self.features2);
+        put_be32(bytes, 204, self.bad_features2);
+
+        if let Some(v5) = &self.v5 {
+            put_be32(bytes, 208, v5.features_compat);
+            put_be32(bytes, 212, v5.features_ro_compat);
+            put_be32(bytes, 216, v5.features_incompat);
+            put_be32(bytes, 220, v5.features_log_incompat);
+            // CRC is written later by write_xfs_crc
+            put_be32(bytes, 228, v5.sparse_inode_align);
+            put_be64(bytes, 232, v5.pquotino);
+            put_be64(bytes, 240, v5.lsn);
+            bytes[248..264].copy_from_slice(&v5.meta_uuid);
+            put_be64(bytes, 264, v5.metadirino);
+            put_be32(bytes, 272, v5.rgcount);
+            put_be32(bytes, 276, v5.rgextents);
+            bytes[280] = v5.rgblklog;
+            put_be64(bytes, 288, v5.rtstart);
+            put_be64(bytes, 296, v5.rtreserved);
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
