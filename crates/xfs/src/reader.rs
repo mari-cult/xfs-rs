@@ -4,8 +4,15 @@ use crate::error::{DeviceError, ParseError, ReadError};
 use crate::on_disk::agf::{Agf, XFS_AGF_CRC_OFF, XFS_AGF_SIZE};
 use crate::on_disk::agfl::{Agfl, XFS_AGFL_CRC_OFF};
 use crate::on_disk::agi::{Agi, XFS_AGI_CRC_OFF, XFS_AGI_SIZE};
+use crate::on_disk::bmap::BmapExtent;
+use crate::on_disk::dir::{DirSfEntry, DirSfHeader};
 use crate::on_disk::inobt::{InodeBtreeKind, InodeBtreeRoot, XFS_BTREE_SBLOCK_CRC_OFF};
-use crate::on_disk::superblock::{Superblock, XFS_DSB_SIZE, XFS_SB_CRC_OFF};
+use crate::on_disk::inode::{Inode, XFS_DINODE_CRC_OFF};
+use crate::on_disk::superblock::{
+    Superblock, XFS_DSB_SIZE, XFS_SB_CRC_OFF, XFS_SB_FEAT_INCOMPAT_FTYPE,
+};
+use alloc::string::{String, ToString};
+use alloc::{vec, vec::Vec};
 
 const XFS_MAX_SECTOR_SIZE: usize = 4096;
 
@@ -149,6 +156,206 @@ pub fn read_inobt_root<D: BlockDevice>(
         InodeBtreeKind::Inobt,
         sb.is_v5(),
     )?)
+}
+
+#[allow(clippy::similar_names)]
+#[inline]
+fn inode_offset(sb: &Superblock, ino: u64) -> Result<u64, ReadError> {
+    #[allow(clippy::cast_possible_truncation)]
+    let agno = (ino >> (u32::from(sb.agblklog) + u32::from(sb.inopblog))) as u32;
+    let agbno = (ino >> sb.inopblog) & ((1u64 << sb.agblklog) - 1);
+    let offset = (ino & ((1u64 << sb.inopblog) - 1)) * u64::from(sb.inode_size);
+
+    Ok(ag_start(sb, agno)? + agbno * u64::from(sb.block_size) + offset)
+}
+
+/// # Errors
+///
+/// * [`ReadError`]
+pub fn read_inode<D: BlockDevice>(
+    dev: &mut D,
+    sb: &Superblock,
+    ino: u64,
+    scratch: &mut [u8],
+) -> Result<Inode, ReadError> {
+    let inosz = sb.inode_size as usize;
+    if scratch.len() < inosz {
+        return Err(ReadError::Device(crate::error::DeviceError::ShortRead {
+            expected: inosz,
+            actual: scratch.len(),
+        }));
+    }
+
+    let offset = inode_offset(sb, ino)?;
+    dev.read_at(offset, &mut scratch[..inosz])?;
+
+    if sb.is_v5() && !verify_xfs_crc(&scratch[..inosz], XFS_DINODE_CRC_OFF) {
+        return Err(ReadError::Parse(ParseError::CrcMismatch { what: "inode" }));
+    }
+
+    Ok(Inode::parse(&scratch[..inosz])?)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DirEntry {
+    pub ino: u64,
+    pub name: String,
+    pub ftype: u8,
+}
+
+/// # Errors
+///
+/// * [`ReadError`]
+pub fn list_dir_entries<D: BlockDevice>(
+    dev: &mut D,
+    sb: &Superblock,
+    ino_num: u64,
+) -> Result<Vec<DirEntry>, ReadError> {
+    let inosz = sb.inode_size as usize;
+    let mut scratch = vec![0u8; inosz];
+    let inode = read_inode(dev, sb, ino_num, &mut scratch)?;
+
+    if (inode.mode & 0xf000) != 0x4000 {
+        return Err(ReadError::Parse(ParseError::InvalidField {
+            field: "mode",
+            value: u64::from(inode.mode),
+        }));
+    }
+
+    match inode.format {
+        crate::on_disk::inode::InodeFormat::Local => {
+            let data = &scratch[176..]; // After V3 header
+            let (hdr, mut pos) = DirSfHeader::parse(data)?;
+            let mut entries = Vec::new();
+
+            // Root doesn't have a "real" parent in shortform if its parent is itself,
+            // but XFS always stores it.
+            entries.push(DirEntry {
+                ino: ino_num,
+                name: ".".to_string(),
+                ftype: 2, // Directory
+            });
+            entries.push(DirEntry {
+                ino: hdr.parent,
+                name: "..".to_string(),
+                ftype: 2, // Directory
+            });
+
+            let has_ftype = sb.has_incompat_feature(XFS_SB_FEAT_INCOMPAT_FTYPE);
+            for _ in 0..hdr.count {
+                let (entry, consumed) = DirSfEntry::parse(&data[pos..], hdr.i8count, has_ftype)?;
+                entries.push(DirEntry {
+                    ino: entry.inumber,
+                    name: entry.name,
+                    ftype: entry.ftype,
+                });
+                pos += consumed;
+            }
+            Ok(entries)
+        }
+        _ => {
+            // TODO: implement Block/Extent formats
+            Ok(vec![
+                DirEntry {
+                    ino: ino_num,
+                    name: ".".to_string(),
+                    ftype: 2,
+                },
+                DirEntry {
+                    ino: ino_num, // Placeholder parent
+                    name: "..".to_string(),
+                    ftype: 2,
+                },
+            ])
+        }
+    }
+}
+
+fn extent_to_physical_offset(sb: &Superblock, ext: &BmapExtent) -> u64 {
+    let ag_blocks = u64::from(sb.ag_blocks);
+    let block_size = u64::from(sb.block_size);
+    let agno = ext.startblock >> sb.agblklog;
+    let agblk = ext.startblock & ((1u64 << sb.agblklog) - 1);
+    (agno * ag_blocks + agblk) * block_size
+}
+
+/// # Errors
+///
+/// * [`ReadError`]
+pub fn read_file_data<D: BlockDevice>(
+    dev: &mut D,
+    sb: &Superblock,
+    ino_num: u64,
+    offset: u64,
+    size: u32,
+) -> Result<Vec<u8>, ReadError> {
+    let inosz = sb.inode_size as usize;
+    let mut scratch = vec![0u8; inosz];
+    let inode = read_inode(dev, sb, ino_num, &mut scratch)?;
+
+    // Regular file (0x8000) or Symlink (0xa000)
+    let mode_type = inode.mode & 0xf000;
+    if mode_type != 0x8000 && mode_type != 0xa000 {
+        return Ok(Vec::new());
+    }
+
+    match inode.format {
+        crate::on_disk::inode::InodeFormat::Local => {
+            let data = &scratch[176..];
+            #[allow(clippy::cast_sign_loss)]
+            let file_size = inode.size as u64;
+            if offset >= file_size {
+                return Ok(Vec::new());
+            }
+            let end = (offset + u64::from(size)).min(file_size);
+            #[allow(clippy::cast_possible_truncation)]
+            Ok(data[offset as usize..end as usize].to_vec())
+        }
+        crate::on_disk::inode::InodeFormat::Extents => {
+            let fork = &scratch[176..];
+            let mut extents = Vec::new();
+            for i in 0..inode.nextents {
+                #[allow(clippy::cast_possible_truncation)]
+                let ext_bytes = &fork[i as usize * 16..];
+                extents.push(BmapExtent::parse(ext_bytes)?);
+            }
+
+            let mut result = Vec::new();
+            let mut remaining = u64::from(size);
+            let mut current_off = offset;
+            #[allow(clippy::cast_sign_loss)]
+            let file_size = inode.size as u64;
+
+            if current_off >= file_size {
+                return Ok(Vec::new());
+            }
+            remaining = remaining.min(file_size - current_off);
+
+            for ext in extents {
+                let ext_start_bytes = ext.startoff * u64::from(sb.block_size);
+                let ext_len_bytes = u64::from(ext.blockcount) * u64::from(sb.block_size);
+
+                if current_off >= ext_start_bytes && current_off < ext_start_bytes + ext_len_bytes {
+                    let in_ext_off = current_off - ext_start_bytes;
+                    let to_read = (ext_len_bytes - in_ext_off).min(remaining);
+
+                    let phy_off = extent_to_physical_offset(sb, &ext) + in_ext_off;
+                    #[allow(clippy::cast_possible_truncation)]
+                    let mut buf = vec![0u8; to_read as usize];
+                    dev.read_at(phy_off, &mut buf)?;
+                    result.extend_from_slice(&buf);
+
+                    remaining -= to_read;
+                    current_off += to_read;
+                    if remaining == 0 {
+                        break;
+                    }
+                }
+            }
+            Ok(result)
+        }
+        _ => Ok(Vec::new()),
+    }
 }
 
 /// # Errors
@@ -295,7 +502,11 @@ mod tests {
             block_log: 12,
             sect_log: 9,
             inode_log: 9,
+            inopblog: 3,
+            agblklog: 7,
+            rextslog: 0,
             inprogress: false,
+            imax_pct: 25,
             icount: 0,
             ifree: 0,
             fdblocks: 0,

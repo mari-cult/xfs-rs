@@ -7,6 +7,9 @@ use crate::on_disk::agi::{Agi, XFS_AGI_CRC_OFF, XFS_AGI_SIZE};
 use crate::on_disk::inobt::{
     InodeBtreeKind, InodeBtreeRoot, XFS_BTREE_SBLOCK_CRC_OFF, XFS_FIBT_CRC_MAGIC, XFS_IBT_CRC_MAGIC,
 };
+use crate::on_disk::inode::{
+    Inode, InodeFormat, XFS_DINODE_CRC_OFF, XFS_DINODE_MAGIC, XFS_DINODE_SIZE_V3,
+};
 use crate::on_disk::superblock::{
     Superblock, V5Fields, XFS_DSB_SIZE, XFS_SB_CRC_OFF, XFS_SB_VERSION_5,
 };
@@ -20,13 +23,22 @@ pub struct MkfsOptions {
     pub uuid: [u8; 16],
 }
 
-fn ilog2(mut n: u64) -> u8 {
-    let mut res = 0;
-    while n > 1 {
-        n >>= 1;
-        res += 1;
+fn ilog2(n: u64) -> u8 {
+    if n <= 1 {
+        0
+    } else {
+        #[allow(clippy::cast_possible_truncation)]
+        (n.ilog2() as u8)
     }
-    res
+}
+
+fn ceil_ilog2(n: u64) -> u8 {
+    if n <= 1 {
+        0
+    } else {
+        #[allow(clippy::cast_possible_truncation)]
+        ((n - 1).ilog2() as u8 + 1)
+    }
 }
 
 /// # Errors
@@ -38,7 +50,7 @@ pub fn mkfs<D: BlockDevice>(dev: &mut D, opts: &MkfsOptions) -> Result<(), Write
     #[allow(clippy::cast_possible_truncation)]
     let ag_count = ag_count as u32;
 
-    let sb = Superblock {
+    let mut sb = Superblock {
         block_size: opts.block_size,
         dblocks: opts.total_blocks,
         rblocks: 0,
@@ -62,10 +74,14 @@ pub fn mkfs<D: BlockDevice>(dev: &mut D, opts: &MkfsOptions) -> Result<(), Write
         block_log: ilog2(u64::from(opts.block_size)),
         sect_log: ilog2(u64::from(opts.sector_size)),
         inode_log: 9, // 2^9 = 512
+        inopblog: ilog2(u64::from(opts.block_size)) - 9,
+        agblklog: ceil_ilog2(u64::from(opts.ag_blocks)),
+        rextslog: 0,
         inprogress: false,
-        icount: 0,
-        ifree: 0,
-        fdblocks: opts.total_blocks, // Roughly
+        imax_pct: 25,
+        icount: 64,
+        ifree: 63,
+        fdblocks: opts.total_blocks - 10, // Roughly
         frextents: 0,
         uquotino: 0,
         gquotino: 0,
@@ -85,7 +101,7 @@ pub fn mkfs<D: BlockDevice>(dev: &mut D, opts: &MkfsOptions) -> Result<(), Write
             features_incompat: 0,
             features_log_incompat: 0,
             crc: 0,
-            sparse_inode_align: 0,
+            sparse_inode_align: 8,
             pquotino: 0,
             lsn: 0,
             meta_uuid: opts.uuid,
@@ -97,6 +113,9 @@ pub fn mkfs<D: BlockDevice>(dev: &mut D, opts: &MkfsOptions) -> Result<(), Write
             rtreserved: 0,
         }),
     };
+
+    let rootino = 8u64 << sb.inopblog;
+    sb.rootino = rootino;
 
     let mut sector = [0u8; 4096]; // Max sector size
 
@@ -145,10 +164,10 @@ pub fn mkfs<D: BlockDevice>(dev: &mut D, opts: &MkfsOptions) -> Result<(), Write
         let agi = Agi {
             seqno: agno,
             length: opts.ag_blocks,
-            count: 0,
+            count: if agno == 0 { 64 } else { 0 },
             root: 6,
             level: 1,
-            freecount: 0,
+            freecount: if agno == 0 { 63 } else { 0 },
             newino: 0xffff_ffff,
             dirino: 0xffff_ffff,
             unlinked: [0xffff_ffff; 64],
@@ -216,6 +235,52 @@ pub fn mkfs<D: BlockDevice>(dev: &mut D, opts: &MkfsOptions) -> Result<(), Write
             dev.write_at(
                 ag_start + u64::from(blk) * u64::from(opts.block_size),
                 &sector[..opts.block_size as usize],
+            )?;
+        }
+
+        // 6. Write Root Inode (only in AG 0)
+        if agno == 0 {
+            let root_inode = Inode {
+                magic: XFS_DINODE_MAGIC,
+                mode: 0x41ed, // S_IFDIR | 0755
+                version: 3,
+                format: InodeFormat::Local,
+                onlink: 0,
+                nlink: 2,
+                uid: 0,
+                gid: 0,
+                projid: 0,
+                flushiter: 0,
+                atime: (0, 0),
+                mtime: (0, 0),
+                ctime: (0, 0),
+                size: 0,
+                nblocks: 0,
+                extsize: 0,
+                nextents: 0,
+                anextents: 0,
+                forkoff: 0,
+                aformat: InodeFormat::Extents,
+                dmevmask: 0,
+                dmstate: 0,
+                flags: 0,
+                generation: 0,
+                next_unlinked: 0xffff_ffff,
+                crc: 0,
+                change_count: 0,
+                lsn: 0,
+                flags2: 0,
+                cowextsize: 0,
+                crtime: (0, 0),
+                ino: rootino,
+                uuid: opts.uuid,
+            };
+            sector.fill(0);
+            root_inode.serialize(&mut sector[..XFS_DINODE_SIZE_V3])?;
+            write_xfs_crc(&mut sector[..sb.inode_size as usize], XFS_DINODE_CRC_OFF);
+            dev.write_at(
+                ag_start + 8 * u64::from(sb.block_size),
+                &sector[..sb.inode_size as usize],
             )?;
         }
     }

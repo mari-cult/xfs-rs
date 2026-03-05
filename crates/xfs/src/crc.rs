@@ -60,7 +60,10 @@ mod tests {
         let mut buf = [0u8; 128];
         let mut i = 0usize;
         while i < buf.len() {
-            buf[i] = (i as u8).wrapping_mul(7);
+            #[allow(clippy::cast_possible_truncation)]
+            {
+                buf[i] = (i as u8).wrapping_mul(7);
+            }
             i += 1;
         }
         write_xfs_crc(&mut buf, 20);

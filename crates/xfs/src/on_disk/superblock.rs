@@ -61,7 +61,11 @@ pub struct Superblock {
     pub block_log: u8,
     pub sect_log: u8,
     pub inode_log: u8,
+    pub inopblog: u8,
+    pub agblklog: u8,
+    pub rextslog: u8,
     pub inprogress: bool,
+    pub imax_pct: u8,
     pub icount: u64,
     pub ifree: u64,
     pub fdblocks: u64,
@@ -89,6 +93,7 @@ impl Superblock {
     /// * `ParseError::InvalidMagic` - If the magic number is not valid.
     /// * `ParseError::InvalidField` - If the block size, sector size, or inode size is invalid.
     /// * `ParseError::InvalidLength` - If the byte slice is not the correct length.
+    #[allow(clippy::too_many_lines)]
     pub fn parse(bytes: &[u8]) -> Result<Self, ParseError> {
         require_len(bytes, XFS_DSB_SIZE)?;
 
@@ -177,7 +182,11 @@ impl Superblock {
             block_log: bytes[120],
             sect_log: bytes[121],
             inode_log: bytes[122],
+            inopblog: bytes[123],
+            agblklog: bytes[124],
+            rextslog: bytes[125],
             inprogress: bytes[126] != 0,
+            imax_pct: bytes[127],
             icount: be_u64(bytes, 128),
             ifree: be_u64(bytes, 136),
             fdblocks: be_u64(bytes, 144),
@@ -250,11 +259,11 @@ impl Superblock {
         bytes[120] = self.block_log;
         bytes[121] = self.sect_log;
         bytes[122] = self.inode_log;
-        bytes[123] = 0; // sb_inodelog
-        bytes[124] = 0; // sb_maxinoarch
-        bytes[125] = 0; // sb_rextslog
+        bytes[123] = self.inopblog;
+        bytes[124] = self.agblklog;
+        bytes[125] = self.rextslog;
         bytes[126] = u8::from(self.inprogress);
-        bytes[127] = 0; // sb_pad
+        bytes[127] = self.imax_pct;
         put_be64(bytes, 128, self.icount);
         put_be64(bytes, 136, self.ifree);
         put_be64(bytes, 144, self.fdblocks);
