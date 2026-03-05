@@ -1,5 +1,5 @@
-use crate::ParseError;
 use crate::endian::{be_u32, be_u64, require_len};
+use crate::error::ParseError;
 
 pub const XFS_AGF_MAGIC: u32 = 0x5841_4746;
 pub const XFS_AGF_VERSION: u32 = 1;
@@ -32,6 +32,9 @@ pub struct Agf {
 }
 
 impl Agf {
+    /// # Errors
+    ///
+    /// * [`ParseError`]
     pub fn parse(bytes: &[u8]) -> Result<Self, ParseError> {
         require_len(bytes, XFS_AGF_SIZE)?;
 

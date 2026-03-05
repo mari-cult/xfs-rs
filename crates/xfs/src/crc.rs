@@ -3,9 +3,10 @@ use crate::endian::le_u32;
 pub const XFS_CRC_SEED: u32 = !0u32;
 
 #[inline]
+#[must_use]
 pub fn crc32c(mut crc: u32, data: &[u8]) -> u32 {
     for &byte in data {
-        crc ^= byte as u32;
+        crc ^= u32::from(byte);
         let mut i = 0;
         while i < 8 {
             let mask = (crc & 1).wrapping_neg();
@@ -16,6 +17,7 @@ pub fn crc32c(mut crc: u32, data: &[u8]) -> u32 {
     crc
 }
 
+#[must_use]
 pub fn verify_xfs_crc(bytes: &[u8], cksum_offset: usize) -> bool {
     if bytes.len() < cksum_offset + 4 {
         return false;

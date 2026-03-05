@@ -1,5 +1,5 @@
-use crate::ParseError;
 use crate::endian::{be_u16, be_u32, be_u64, le_u32, require_len};
+use crate::error::ParseError;
 
 pub const XFS_SB_MAGIC: u32 = 0x5846_5342;
 pub const XFS_SB_VERSION_5: u16 = 5;
@@ -82,6 +82,13 @@ pub struct Superblock {
 }
 
 impl Superblock {
+    /// Parse a superblock from a byte slice.
+    ///
+    /// # Errors
+    ///
+    /// * `ParseError::InvalidMagic` - If the magic number is not valid.
+    /// * `ParseError::InvalidField` - If the block size, sector size, or inode size is invalid.
+    /// * `ParseError::InvalidLength` - If the byte slice is not the correct length.
     pub fn parse(bytes: &[u8]) -> Result<Self, ParseError> {
         require_len(bytes, XFS_DSB_SIZE)?;
 
@@ -107,19 +114,19 @@ impl Superblock {
         if block_size == 0 {
             return Err(ParseError::InvalidField {
                 field: "sb_blocksize",
-                value: block_size as u64,
+                value: u64::from(block_size),
             });
         }
         if sector_size == 0 {
             return Err(ParseError::InvalidField {
                 field: "sb_sectsize",
-                value: sector_size as u64,
+                value: u64::from(sector_size),
             });
         }
         if inode_size == 0 {
             return Err(ParseError::InvalidField {
                 field: "sb_inodesize",
-                value: inode_size as u64,
+                value: u64::from(inode_size),
             });
         }
 
@@ -192,22 +199,23 @@ impl Superblock {
     }
 
     #[inline]
+    #[must_use]
     pub fn is_v5(&self) -> bool {
         self.version == XFS_SB_VERSION_5
     }
 
     #[inline]
+    #[must_use]
     pub fn has_incompat_feature(&self, feature: u32) -> bool {
         self.v5
-            .map(|v| (v.features_incompat & feature) != 0)
-            .unwrap_or(false)
+            .is_some_and(|v| (v.features_incompat & feature) != 0)
     }
 
     #[inline]
+    #[must_use]
     pub fn has_ro_compat_feature(&self, feature: u32) -> bool {
         self.v5
-            .map(|v| (v.features_ro_compat & feature) != 0)
-            .unwrap_or(false)
+            .is_some_and(|v| (v.features_ro_compat & feature) != 0)
     }
 }
 

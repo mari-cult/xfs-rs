@@ -10,6 +10,7 @@ pub struct Geometry {
 
 impl Geometry {
     #[inline]
+    #[must_use]
     pub fn from_superblock(sb: &Superblock) -> Self {
         Self {
             block_size: sb.block_size,
@@ -20,12 +21,14 @@ impl Geometry {
     }
 
     #[inline]
+    #[must_use]
     pub fn fsb_to_bytes(self, fsb: u64) -> u64 {
-        fsb.saturating_mul(self.block_size as u64)
+        fsb.saturating_mul(u64::from(self.block_size))
     }
 
     #[inline]
+    #[must_use]
     pub fn bytes_to_fsb(self, bytes: u64) -> u64 {
-        bytes / self.block_size as u64
+        bytes / u64::from(self.block_size)
     }
 }

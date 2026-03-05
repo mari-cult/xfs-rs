@@ -14,9 +14,9 @@ fn ag_start(sb: &Superblock, agno: u32) -> Result<u64, ReadError> {
     if agno >= sb.ag_count {
         return Err(ReadError::Device(DeviceError::OutOfRange));
     }
-    let ag_blocks = sb.ag_blocks as u64;
-    let block_size = sb.block_size as u64;
-    Ok((agno as u64)
+    let ag_blocks = u64::from(sb.ag_blocks);
+    let block_size = u64::from(sb.block_size);
+    Ok(u64::from(agno)
         .saturating_mul(ag_blocks)
         .saturating_mul(block_size))
 }
@@ -32,6 +32,9 @@ fn ensure_sector_size(sector_size: u16) -> Result<usize, ReadError> {
     Ok(size)
 }
 
+/// # Errors
+///
+/// * [`ReadError`]
 pub fn read_superblock<D: BlockDevice>(dev: &mut D) -> Result<Superblock, ReadError> {
     let mut raw = [0u8; XFS_DSB_SIZE];
     dev.read_at(0, &mut raw)?;
@@ -51,9 +54,12 @@ pub fn read_superblock<D: BlockDevice>(dev: &mut D) -> Result<Superblock, ReadEr
     Ok(sb)
 }
 
+/// # Errors
+///
+/// * [`ReadError`]
 pub fn read_agf<D: BlockDevice>(dev: &mut D, sb: &Superblock, agno: u32) -> Result<Agf, ReadError> {
     let mut raw = [0u8; XFS_AGF_SIZE];
-    let offset = ag_start(sb, agno)? + sb.sector_size as u64;
+    let offset = ag_start(sb, agno)? + u64::from(sb.sector_size);
     dev.read_at(offset, &mut raw)?;
     let agf = Agf::parse(&raw)?;
 
@@ -69,9 +75,12 @@ pub fn read_agf<D: BlockDevice>(dev: &mut D, sb: &Superblock, agno: u32) -> Resu
     Ok(agf)
 }
 
+/// # Errors
+///
+/// * [`ReadError`]
 pub fn read_agi<D: BlockDevice>(dev: &mut D, sb: &Superblock, agno: u32) -> Result<Agi, ReadError> {
     let mut raw = [0u8; XFS_AGI_SIZE];
-    let offset = ag_start(sb, agno)? + 2 * sb.sector_size as u64;
+    let offset = ag_start(sb, agno)? + 2 * u64::from(sb.sector_size);
     dev.read_at(offset, &mut raw)?;
     let agi = Agi::parse(&raw)?;
 
@@ -87,13 +96,16 @@ pub fn read_agi<D: BlockDevice>(dev: &mut D, sb: &Superblock, agno: u32) -> Resu
     Ok(agi)
 }
 
+/// # Errors
+///
+/// * [`ReadError`]
 pub fn read_agfl<D: BlockDevice>(
     dev: &mut D,
     sb: &Superblock,
     agno: u32,
 ) -> Result<Agfl, ReadError> {
     let sector_size = ensure_sector_size(sb.sector_size)?;
-    let offset = ag_start(sb, agno)? + 3 * sb.sector_size as u64;
+    let offset = ag_start(sb, agno)? + 3 * u64::from(sb.sector_size);
     let mut sector = [0u8; XFS_MAX_SECTOR_SIZE];
     dev.read_at(offset, &mut sector[..sector_size])?;
 
@@ -108,6 +120,9 @@ pub fn read_agfl<D: BlockDevice>(
     )?)
 }
 
+/// # Errors
+///
+/// * [`ReadError`]
 pub fn read_inobt_root<D: BlockDevice>(
     dev: &mut D,
     sb: &Superblock,
@@ -122,7 +137,7 @@ pub fn read_inobt_root<D: BlockDevice>(
             actual: scratch.len(),
         }));
     }
-    let offset = ag_start(sb, agno)? + (agi.root as u64) * (sb.block_size as u64);
+    let offset = ag_start(sb, agno)? + u64::from(agi.root) * u64::from(sb.block_size);
     dev.read_at(offset, &mut scratch[..blksz])?;
     if sb.is_v5() && !verify_xfs_crc(&scratch[..blksz], XFS_BTREE_SBLOCK_CRC_OFF) {
         return Err(ReadError::Parse(ParseError::CrcMismatch {
@@ -136,6 +151,9 @@ pub fn read_inobt_root<D: BlockDevice>(
     )?)
 }
 
+/// # Errors
+///
+/// * [`ReadError`]
 pub fn read_finobt_root<D: BlockDevice>(
     dev: &mut D,
     sb: &Superblock,
@@ -150,7 +168,7 @@ pub fn read_finobt_root<D: BlockDevice>(
             actual: scratch.len(),
         }));
     }
-    let offset = ag_start(sb, agno)? + (agi.free_root as u64) * (sb.block_size as u64);
+    let offset = ag_start(sb, agno)? + u64::from(agi.free_root) * u64::from(sb.block_size);
     dev.read_at(offset, &mut scratch[..blksz])?;
     if sb.is_v5() && !verify_xfs_crc(&scratch[..blksz], XFS_BTREE_SBLOCK_CRC_OFF) {
         return Err(ReadError::Parse(ParseError::CrcMismatch {
@@ -180,12 +198,23 @@ mod tests {
     impl BlockDevice for MockDevice {
         fn read_at(&mut self, offset: u64, buf: &mut [u8]) -> Result<(), DeviceError> {
             self.last_offset = offset;
-            let start = offset as usize;
+            let start = usize::try_from(offset).unwrap();
             let end = start + buf.len();
             if end > self.data.len() {
                 return Err(DeviceError::OutOfRange);
             }
             buf.copy_from_slice(&self.data[start..end]);
+            Ok(())
+        }
+
+        fn write_at(&mut self, offset: u64, buf: &[u8]) -> Result<(), DeviceError> {
+            self.last_offset = offset;
+            let start = usize::try_from(offset).unwrap();
+            let end = start + buf.len();
+            if end > self.data.len() {
+                return Err(DeviceError::OutOfRange);
+            }
+            self.data[start..end].copy_from_slice(buf);
             Ok(())
         }
     }

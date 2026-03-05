@@ -1,5 +1,5 @@
-use crate::ParseError;
 use crate::endian::{be_u32, be_u64, require_len};
+use crate::error::ParseError;
 
 pub const XFS_AGI_MAGIC: u32 = 0x5841_4749;
 pub const XFS_AGI_VERSION: u32 = 1;
@@ -28,6 +28,12 @@ pub struct Agi {
 }
 
 impl Agi {
+    /// Parse an agi from a byte slice.
+    ///
+    /// # Errors
+    ///
+    /// * `ParseError::InvalidMagic` - If the magic number is not valid.
+    /// * `ParseError::InvalidLength` - If the byte slice is not the correct length.
     pub fn parse(bytes: &[u8]) -> Result<Self, ParseError> {
         require_len(bytes, XFS_AGI_SIZE)?;
 

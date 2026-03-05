@@ -1,5 +1,5 @@
-use crate::ParseError;
 use crate::endian::{be_u32, be_u64, require_len};
+use crate::error::ParseError;
 
 pub const XFS_AGFL_MAGIC: u32 = 0x5841_464c;
 pub const XFS_AGFL_HEADER_SIZE: usize = 36;
@@ -16,6 +16,12 @@ pub struct Agfl {
 }
 
 impl Agfl {
+    /// Parse an agfl from a byte slice.
+    ///
+    /// # Errors
+    ///
+    /// * `ParseError::InvalidMagic` - If the magic number is not valid.
+    /// * `ParseError::InvalidLength` - If the byte slice is not the correct length.
     pub fn parse(bytes: &[u8], sector_size: u16, crc_enabled: bool) -> Result<Self, ParseError> {
         let sector_size = sector_size as usize;
         require_len(bytes, sector_size)?;
@@ -34,7 +40,7 @@ impl Agfl {
         } else {
             sector_size
         };
-        let entries_total = (entries_bytes / 4) as u32;
+        let entries_total = u32::try_from(entries_bytes / 4).map_err(ParseError::InvalidInt)?;
 
         let mut uuid = [0u8; 16];
         uuid.copy_from_slice(&bytes[8..24]);
@@ -71,6 +77,9 @@ mod tests {
         let agfl = Agfl::parse(&raw, 512, true).expect("agfl parse");
         assert_eq!(agfl.seqno, 7);
         assert_eq!(agfl.lsn, 0x1234);
-        assert_eq!(agfl.entries_total, (512 - XFS_AGFL_HEADER_SIZE) as u32 / 4);
+        assert_eq!(
+            agfl.entries_total,
+            u32::try_from(512 - XFS_AGFL_HEADER_SIZE).expect("agfl entries_total") / 4,
+        );
     }
 }

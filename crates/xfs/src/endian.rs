@@ -1,5 +1,10 @@
-use crate::ParseError;
+use crate::error::ParseError;
 
+/// Ensures that the byte slice is long enough.
+///
+/// # Errors
+///
+/// This function will return an error if the byte slice is not long enough.
 #[inline]
 pub fn require_len(bytes: &[u8], min_len: usize) -> Result<(), ParseError> {
     if bytes.len() < min_len {
@@ -12,16 +17,19 @@ pub fn require_len(bytes: &[u8], min_len: usize) -> Result<(), ParseError> {
 }
 
 #[inline]
+#[must_use]
 pub fn be_u16(bytes: &[u8], off: usize) -> u16 {
     u16::from_be_bytes([bytes[off], bytes[off + 1]])
 }
 
 #[inline]
+#[must_use]
 pub fn be_u32(bytes: &[u8], off: usize) -> u32 {
     u32::from_be_bytes([bytes[off], bytes[off + 1], bytes[off + 2], bytes[off + 3]])
 }
 
 #[inline]
+#[must_use]
 pub fn be_u64(bytes: &[u8], off: usize) -> u64 {
     u64::from_be_bytes([
         bytes[off],
@@ -36,6 +44,7 @@ pub fn be_u64(bytes: &[u8], off: usize) -> u64 {
 }
 
 #[inline]
+#[must_use]
 pub fn le_u32(bytes: &[u8], off: usize) -> u32 {
     u32::from_le_bytes([bytes[off], bytes[off + 1], bytes[off + 2], bytes[off + 3]])
 }

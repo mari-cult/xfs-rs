@@ -1,5 +1,5 @@
-use crate::ParseError;
 use crate::endian::{be_u16, be_u32, be_u64, require_len};
+use crate::error::ParseError;
 
 pub const XFS_IBT_MAGIC: u32 = 0x4941_4254;
 pub const XFS_IBT_CRC_MAGIC: u32 = 0x4941_4233;
@@ -30,6 +30,13 @@ pub struct InodeBtreeRoot {
 }
 
 impl InodeBtreeRoot {
+    /// Parse an inobt or finobt root from a byte slice.
+    ///
+    /// # Errors
+    ///
+    /// * `ParseError::UnsupportedVersion` - If the version is not supported.
+    /// * `ParseError::InvalidMagic` - If the magic number is not valid.
+    /// * `ParseError::InvalidLength` - If the byte slice is not the correct length.
     pub fn parse(
         bytes: &[u8],
         kind: InodeBtreeKind,

@@ -4,5 +4,14 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[[bin]]
+name = "xfs"
+path = "src/main.rs"
+
 [dependencies]
-libxfs_rs = { package = "xfs-rs", path = "../libxfs", features = ["std"] }
+xfs-rs = { workspace = true, features = ["std"] }
+clap = { workspace = true }
+rootcause = { workspace = true }
+
+[lints]
+workspace = true

@@ -12,6 +12,8 @@ pub enum ParseError {
     InvalidField { field: &'static str, value: u64 },
     #[error("crc mismatch in {what}")]
     CrcMismatch { what: &'static str },
+    #[error("invalid integer conversion: {0}")]
+    InvalidInt(core::num::TryFromIntError),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -20,6 +22,8 @@ pub enum DeviceError {
     Io,
     #[error("short read: expected {expected} bytes, got {actual}")]
     ShortRead { expected: usize, actual: usize },
+    #[error("short write: expected {expected} bytes, got {actual}")]
+    ShortWrite { expected: usize, actual: usize },
     #[error("offset out of range")]
     OutOfRange,
 }
